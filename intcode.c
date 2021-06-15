@@ -9,8 +9,12 @@
 #define MAXPC  (3)  // max param count
 #define STAGES (5)  // number of amplifier stages
 
+typedef enum parmode {
+    POS, IMM, REL
+} ParMode;
+
 typedef enum opcode {
-    NOP, ADD, MUL, INP, OUT, JNZ, JPZ, LT, EQ,
+    NOP, ADD, MUL, INP, OUT, JNZ, JPZ, LT, EQ, RBO,
     HLT = 99,
 } OpCode;
 
@@ -22,22 +26,23 @@ typedef struct lang {
 typedef struct virtualmachine {
     int64_t *mem;
     size_t size;
-    ssize_t ip;
+    ssize_t ip, base;
     int phase;
     bool phased;
     bool halted;
 } VirtualMachine;
 
 static const Lang lang[] = {
-    { .op = NOP, .ic = 0, .oc = 0 },
-    { .op = ADD, .ic = 2, .oc = 1 },
-    { .op = MUL, .ic = 2, .oc = 1 },
-    { .op = INP, .ic = 0, .oc = 1 },
-    { .op = OUT, .ic = 1, .oc = 0 },
-    { .op = JNZ, .ic = 2, .oc = 0 },
-    { .op = JPZ, .ic = 2, .oc = 0 },
-    { .op = LT , .ic = 2, .oc = 1 },
-    { .op = EQ , .ic = 2, .oc = 1 },
+    { .op = NOP, .ic = 0, .oc = 0 },  // no operation
+    { .op = ADD, .ic = 2, .oc = 1 },  // add
+    { .op = MUL, .ic = 2, .oc = 1 },  // multiply
+    { .op = INP, .ic = 0, .oc = 1 },  // input
+    { .op = OUT, .ic = 1, .oc = 0 },  // output
+    { .op = JNZ, .ic = 2, .oc = 0 },  // jump if not zero
+    { .op = JPZ, .ic = 2, .oc = 0 },  // jump if zero
+    { .op = LT , .ic = 2, .oc = 1 },  // less than (1/0)
+    { .op = EQ , .ic = 2, .oc = 1 },  // equal (1/0)
+    { .op = RBO, .ic = 1, .oc = 0 },  // relative base offset
     // HLT=99 is not consecutive, so reuse NOP which has same params (i.e. none)
 };
 static const size_t langsize = sizeof lang / sizeof *lang;
@@ -108,16 +113,18 @@ static void load(const char *filename)
 static void reset(VirtualMachine *pvm, int phase)
 {
     if (pvm->size < codesize) {
-        pvm->mem = realloc(pvm->mem, codesize * sizeof *(pvm->mem));
-        if (pvm->mem == NULL) {
+        int64_t *try = realloc(pvm->mem, codesize * sizeof *(pvm->mem));
+        if (try == NULL) {
             cleanup();
             fprintf(stderr, "Out of memory.\n");
             exit(4);
         }
+        pvm->mem = try;
     }
     pvm->size = codesize;
     memcpy(pvm->mem, code, pvm->size * sizeof *(pvm->mem));
     pvm->ip = 0;
+    pvm->base = 0;
     pvm->phase = phase;
     pvm->phased = false;
     pvm->halted = false;
@@ -138,6 +145,23 @@ static int64_t input(void)
     return n;
 }
 
+static void grow(VirtualMachine *pvm, size_t extra)
+{
+    if (pvm != NULL && extra > 0) {
+        size_t oldsize = pvm->size;
+        size_t newsize = oldsize + extra;
+        int64_t *try = realloc(pvm->mem, newsize * sizeof *(pvm->mem));
+        if (try == NULL) {
+            cleanup();
+            fprintf(stderr, "Out of memory.\n");
+            exit(5);
+        }
+        memset(try + oldsize, 0, extra * sizeof *(pvm->mem));
+        pvm->mem = try;
+        pvm->size = newsize;
+    }
+}
+
 static int64_t run(VirtualMachine *pvm, const int64_t inputval)
 {
     int64_t p[MAXPC];    // parameter values (positional or immediate)
@@ -150,12 +174,20 @@ static int64_t run(VirtualMachine *pvm, const int64_t inputval)
         int pc = 0;    // param count
         const Lang *def = op < langsize ? &lang[op] : &lang[NOP];  // HLT=NOP
         while (pc < def->ic) {
-            int64_t imm = pvm->mem[pvm->ip++];
-            p[pc++] = instr % 10 ? imm : pvm->mem[imm];
+            ParMode mode = instr % 10;
+            int64_t par = pvm->mem[pvm->ip++];
+            switch (mode) {
+                case REL: par += pvm->base;            // relative, fall through to positional
+                case POS: par = pvm->mem[par]; break;  // positional
+            }
+            p[pc++] = par;
             instr /= 10;
         }
         if (def->oc) {  // never more than one output param
             p[pc] = pvm->mem[pvm->ip++];  // ouput param always positional but use immediate value as index in vm
+            if (instr % 10 == REL) {
+                p[pc] += pvm->base;
+            }
         }
         switch (op) {
             case NOP: break;
@@ -171,6 +203,7 @@ static int64_t run(VirtualMachine *pvm, const int64_t inputval)
             case JPZ: if (!p[0]) pvm->ip = p[1];     break;
             case LT : pvm->mem[p[2]] = p[0] <  p[1]; break;
             case EQ : pvm->mem[p[2]] = p[0] == p[1]; break;
+            case RBO: pvm->base += p[0];             break;
             case HLT: pvm->halted = true;            break;
         }
     }
