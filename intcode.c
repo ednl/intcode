@@ -138,10 +138,10 @@ static int64_t input(void)
     return n;
 }
 
-static int64_t run(VirtualMachine *pvm, int64_t inputval)
+static int64_t run(VirtualMachine *pvm, const int64_t inputval)
 {
     int64_t p[MAXPC];    // parameter values (positional or immediate)
-    bool empty = false;  // input fifo (of length 1...)
+    bool empty = false;  // state of input fifo (of length 1...)
 
     while (!pvm->halted) {
         int64_t instr = pvm->mem[pvm->ip++];  // instruction code
@@ -150,10 +150,11 @@ static int64_t run(VirtualMachine *pvm, int64_t inputval)
         int pc = 0;    // param count
         const Lang *def = op < langsize ? &lang[op] : &lang[NOP];  // HLT=NOP
         while (pc < def->ic) {
-            p[pc++] = instr % 10 ? pvm->mem[pvm->ip++] : pvm->mem[pvm->mem[pvm->ip++]];
+            int64_t imm = pvm->mem[pvm->ip++];
+            p[pc++] = instr % 10 ? imm : pvm->mem[imm];
             instr /= 10;
         }
-        if (def->oc) {  // there is only ever one output param max
+        if (def->oc) {  // never more than one output param
             p[pc] = pvm->mem[pvm->ip++];  // ouput param always positional but use immediate value as index in vm
         }
         switch (op) {
@@ -165,7 +166,7 @@ static int64_t run(VirtualMachine *pvm, int64_t inputval)
                 empty = pvm->phased;
                 pvm->phased = true;
                 break;
-            case OUT: return p[0];
+            case OUT: return p[0];  // ip is good to go for next run
             case JNZ: if ( p[0]) pvm->ip = p[1];     break;
             case JPZ: if (!p[0]) pvm->ip = p[1];     break;
             case LT : pvm->mem[p[2]] = p[0] <  p[1]; break;
@@ -173,9 +174,11 @@ static int64_t run(VirtualMachine *pvm, int64_t inputval)
             case HLT: pvm->halted = true;            break;
         }
     }
-    return inputval;
+    return inputval;  // return unchanged if halted
 }
 
+// Permutate in lexicographic order, adapted from "perm1()"
+// at http://www.rosettacode.org/wiki/Permutations#version_4
 static int next_perm(int *a, int n)
 {
 	int k, l, t;
@@ -203,21 +206,21 @@ static int64_t amplify(int64_t val)
 
 static int64_t maxamp(const int part)
 {
-    int64_t ma = -1;
+    int64_t amax = -1;
     int phase[STAGES] = {0};
 
-    // Initial phases
+    // Initial phases: 0-4 for part 1, 5-9 for part 2
 	for (int i = 0; i < STAGES; ++i) {
         phase[i] = STAGES * (part - 1) + i;
     }
 
-    // Permutations of phases
+    // All permutations of phase array
 	do {
         // Start every permutation with fresh amps
         for (int i = 0; i < STAGES; ++i) {
             reset(&vm[i], phase[i]);
         }
-        // First run of all the stages
+        // First run of all the stages together
         int64_t a = amplify(0);
         if (part == 2) {
             // Multiple runs until halted
@@ -225,11 +228,11 @@ static int64_t maxamp(const int part)
                 a = amplify(a);
             }
         }
-        if (a > ma) {
-            ma = a;
+        if (a > amax) {
+            amax = a;
         }
 	} while (next_perm(phase, STAGES));
-    return ma;
+    return amax;
 }
 
 int main(void)
