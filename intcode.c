@@ -398,6 +398,7 @@ static int day2part2(VirtualMachine *app, VirtualMachine *ref)
             }
         }
     }
+    return -1;
 }
 
 int main(void)
@@ -405,8 +406,8 @@ int main(void)
     VirtualMachine *ref, *app;
 
     // Day 2 part 1
-    *ref = &vm[0];
-    *app = &vm[1];
+    ref = &vm[0];
+    app = &vm[1];
     load(ref, "input02.txt");  // load data into last VM, amps are numbered 0..STAGES-1
     copyvm(app, ref);
     app->mem[1] = 12;
