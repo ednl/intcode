@@ -13,6 +13,17 @@
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "macos-clang-x64"
+        },
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "linux-gcc-arm64"
         }
     ],
     "version": 4
