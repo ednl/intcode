@@ -74,22 +74,20 @@ static int64_t input(void)
     char *s = NULL;
     size_t t = 0;
 
-    if (isatty(STDIN_FILENO)) {
+    if (isatty(STDIN_FILENO))
         printf("? ");
-    }
-    if (getline(&s, &t, stdin) > 0) {
+    if (getline(&s, &t, stdin) > 0)
         val = atoll(s);
-    }
     free(s);
     return val;
 }
 
-static void output(int64_t val)
+static void output(const int64_t val)
 {
     printf("%"PRId64"\n", val);
 }
 
-static int64_t fifopop(void)
+static int64_t fifo_pop(void)
 {
     if (fifohead == fifotail) {
         return input();
@@ -99,36 +97,30 @@ static int64_t fifopop(void)
     return val;
 }
 
-static void fifopush(int64_t val)
+static void fifo_push(const int64_t val)
 {
     size_t nexthead = (fifohead + 1) % FIFOSIZE;
-    if (nexthead == fifotail) {
+    if (nexthead == fifotail)
         output(val);
-    }
     fifobuf[fifohead] = val;
     fifohead = nexthead;
 }
 
 static void fifoprint()
 {
-    while (fifohead != fifotail) {
-        output(fifopop());
-    }
+    while (fifohead != fifotail)
+        output(fifo_pop());
 }
 
 static const Lang *getdef(OpCode op)
 {
-    if (op >= langsize) {
+    if (op >= langsize)
         return &lang[NOP];
-    }
-    if (lang[op].op == op) {
+    if (lang[op].op == op)
         return &lang[op];
-    }
-    for (size_t i = 0; i < langsize; ++i) {
-        if (lang[i].op == op) {
+    for (size_t i = 0; i < langsize; ++i)
+        if (lang[i].op == op)
             return &lang[i];
-        }
-    }
     return &lang[NOP];
 }
 
@@ -136,15 +128,14 @@ static void clean(VirtualMachine *pv)
 {
     if (pv != NULL) {
         free(pv->mem);
-        memset(pv, 0, sizeof *pv);
+        *pv = (VirtualMachine){0};
     }
 }
 
 static void clean_all(void)
 {
-    for (size_t i = 0; i < VMCOUNT; ++i) {
+    for (size_t i = 0; i < VMCOUNT; ++i)
         clean(&vm[i]);
-    }
 }
 
 static __attribute__((noreturn)) void fatal(ErrCode e)
@@ -180,9 +171,8 @@ static void setsize(VirtualMachine *pv, const size_t newsize)
 
 static void addsize(VirtualMachine *pv, const ssize_t extra)
 {
-    if (pv != NULL && extra > 0) {
+    if (pv != NULL && extra > 0)
         setsize(pv, pv->size + (size_t)extra);
-    }
 }
 
 static void copyvm(VirtualMachine *dst, const VirtualMachine *src)
@@ -190,9 +180,8 @@ static void copyvm(VirtualMachine *dst, const VirtualMachine *src)
     if (dst != NULL && src != NULL) {
         setsize(dst, src->size);  // new minimal size (could still be bigger as a left-over)
         memcpy(dst->mem, src->mem, src->size * sizeof *(src->mem));  // copy memory from source
-        if (dst->size > src->size) {  // erase the rest
+        if (dst->size > src->size)  // erase the rest
             memset(dst->mem + src->size, 0, (dst->size - src->size) * sizeof *(dst->mem));
-        }
         dst->ip     = src->ip;
         dst->base   = src->base;
         dst->halted = src->halted;
@@ -203,20 +192,17 @@ static void load(VirtualMachine *pv, const char *filename)
 {
     // Open file
     FILE *f = fopen(filename, "r");
-    if (f == NULL) {
+    if (f == NULL)
         fatal(ERR_FILE_NOTFOUND);
-    }
 
     // Check number of commas
     size_t commas = 0;
     int c;
-    while ((c = fgetc(f)) != EOF) {
+    while ((c = fgetc(f)) != EOF)
         commas += c == ',';
-    }
-    if (!commas) {
+    if (!commas)
         // TODO: single number "99" or even "0" should probably be a valid file
         fatal(ERR_FILE_NOTCSV);
-    }
 
     // Prepare VM & memory
     clean(pv); // reset everything to zero
@@ -226,24 +212,20 @@ static void load(VirtualMachine *pv, const char *filename)
     rewind(f);
     int n;
     size_t i = 0;
-    if (fscanf(f, "%d", &n) == 1) {  // first value has no leading comma
+    if (fscanf(f, "%d", &n) == 1)  // first value has no leading comma
         pv->mem[i++] = n;
-    }
-    while (i < pv->size && fscanf(f, ",%d", &n) == 1) {  // all other values
+    while (i < pv->size && fscanf(f, ",%d", &n) == 1)  // all other values
         pv->mem[i++] = n;
-    }
     fclose(f);
-    if (i != pv->size) {
+    if (i != pv->size)
         fatal(ERR_FILE_INVALID);
-    }
 }
 
 static void print(VirtualMachine *pv)
 {
     printf("%"PRId64, pv->mem[0]);
-    for (size_t i = 1; i < pv->size; ++i) {
+    for (size_t i = 1; i < pv->size; ++i)
         printf(",%"PRId64, pv->mem[i]);
-    }
     printf("\n");
 }
 
@@ -255,20 +237,17 @@ static void run(VirtualMachine *pv)
     int pc;                   // running parameter count
 
     while (!pv->halted) {
-        if (pv->ip < 0) {
+        if (pv->ip < 0)
             fatal(ERR_IP_LO);
-        }
-        if ((size_t)(pv->ip) >= pv->size) {
+        if ((size_t)(pv->ip) >= pv->size)
             fatal(ERR_IP_HI);
-        }
 
         in = pv->mem[pv->ip++];  // get instruction code, increment IP
         op = in % 100;
         const Lang *def = getdef(op);
 
-        if (def->pc > 0 && (size_t)(pv->ip + def->pc) >= pv->size) {
+        if (def->pc > 0 && (size_t)(pv->ip + def->pc) >= pv->size)
             fatal(ERR_IP_INSTR);
-        }
 
         in /= 100;  // parameter modes for all parameters
         pc = 0;     // param count
@@ -276,15 +255,12 @@ static void run(VirtualMachine *pv)
             q = pv->mem[pv->ip++];  // get immediate parameter value, increment IP
             mode = in % 10;         // mode for this parameter (0=positional, 1=immediate, 2=relative)
             if (!(mode & IMM)) {    // if positional or relative
-                if (mode & REL) {   // if relative
+                if (mode & REL)     // if relative
                     q += pv->base;
-                }
-                if (q < 0) {  // negative addresses are invalid
+                if (q < 0)  // negative addresses are invalid
                     fatal(ERR_PAR_READ);
-                }
-                if ((size_t)q >= pv->size) {  // read beyond mem size?
+                if ((size_t)q >= pv->size)  // read beyond mem size?
                     setsize(pv, (size_t)(q + 1));
-                }
                 q = pv->mem[q];  // indirection for positional or relative parameter
             }
             p[pc++] = q;  // save & increment param count
@@ -294,15 +270,12 @@ static void run(VirtualMachine *pv)
         if (def->oc) {  // output param always last, never more than one, never immediate
             q = pv->mem[pv->ip++];  // get immediate parameter value, increment IP
             mode = in % 10;         // mode for this parameter (0=positional, 1=immediate, 2=relative)
-            if (mode & REL) {       // if relative
+            if (mode & REL)         // if relative
                 q += pv->base;
-            }
-            if (q < 0) {  // negative addresses are invalid
+            if (q < 0)  // negative addresses are invalid
                 fatal(ERR_PAR_WRITE);
-            }
-            if ((size_t)q >= pv->size) {  // write beyond mem size?
+            if ((size_t)q >= pv->size)  // write beyond mem size?
                 setsize(pv, (size_t)(q + 1));
-            }
             p[pc++] = q;  // no indirection yet, use as index in mem
         }
 
@@ -310,8 +283,8 @@ static void run(VirtualMachine *pv)
             case NOP: break;
             case ADD: pv->mem[p[2]] = p[0] + p[1];  break;
             case MUL: pv->mem[p[2]] = p[0] * p[1];  break;
-            case INP: pv->mem[p[0]] = fifopop();    break;   // when fifo empty, ask
-            case OUT: fifopush(p[0]);               return;  // TODO: keep running? But needs separate in/out fifos :(
+            case INP: pv->mem[p[0]] = fifo_pop();   break;   // when fifo empty, ask
+            case OUT: fifo_push(p[0]);              return;  // TODO: keep running? But needs separate in/out fifos :(
             case JNZ: if ( p[0]) pv->ip = p[1];     break;
             case JPZ: if (!p[0]) pv->ip = p[1];     break;
             case LT : pv->mem[p[2]] = p[0] <  p[1]; break;
@@ -335,9 +308,8 @@ static int next_perm(int *a, int n)
 	for (l = n - 1; a[l] <= a[k]; l--)
         ;
     t = a[k]; a[k] = a[l]; a[l] = t;
-	for (k++, l = n - 1; l > k; l--, k++) {
+	for (k++, l = n - 1; l > k; l--, k++)
         t = a[k]; a[k] = a[l]; a[l] = t;
-    }
 	return 1;
 }
 
@@ -349,37 +321,34 @@ static int64_t maxamp(int part)
     int phase[STAGES];
 
     // Initial phase numbers: 0-4 for part 1, 5-9 for part 2
-	for (int i = 0; i < STAGES; ++i) {
+	for (int i = 0; i < STAGES; ++i)
         phase[i] = STAGES * (part - 1) + i;
-    }
 
     // All permutations of phase array
 	do {
         // Start every permutation with fresh amps
-        for (int i = 0; i < STAGES; ++i) {
+        for (int i = 0; i < STAGES; ++i)
             copyvm(&vm[i], &vm[STAGES]);
-        }
         // First run requires two inputs for every stage
         int64_t a = 0;
         for (int i = 0; i < STAGES; ++i) {
-            fifopush(phase[i]);
-            fifopush(a);
+            fifo_push(phase[i]);
+            fifo_push(a);
             run(&vm[i]);
-            a = fifopop();
+            a = fifo_pop();
         }
         if (part == 2) {
             // Multiple runs until halted
-            fifopush(a);
+            fifo_push(a);
             int i = 0;
             while (!vm[i].halted) {
                 run(&vm[i++]);
                 i %= STAGES;
             }
-            a = fifopop();
+            a = fifo_pop();
         }
-        if (a > amax) {
+        if (a > amax)
             amax = a;
-        }
 	} while (next_perm(phase, STAGES));
     return amax;
 }
@@ -387,17 +356,15 @@ static int64_t maxamp(int part)
 static int day2part2(VirtualMachine *app, VirtualMachine *ref)
 {
     static const int magic = 19690720;
-    for (int verb = 0; verb < 100; ++verb) {
+    for (int verb = 0; verb < 100; ++verb)
         for (int noun = 0; noun < 100; ++noun) {
             copyvm(app, ref);
             app->mem[1] = noun;
             app->mem[2] = verb;
             run(app);
-            if (app->mem[0] == magic) {
+            if (app->mem[0] == magic)
                 return noun * 100 + verb;
-            }
         }
-    }
     return -1;
 }
 
@@ -429,15 +396,15 @@ int main(void)
     app = &vm[1];
     load(ref, "input09.txt");
     copyvm(app, ref);
-    fifopush(1);
+    fifo_push(1);
     run(app);
-    printf("Day 9 part 1: %"PRId64"\n", fifopop());  // right answer = 4261108180
+    printf("Day 9 part 1: %"PRId64"\n", fifo_pop());  // right answer = 4261108180
 
     // Day 9 part 2
     copyvm(app, ref);
-    fifopush(2);
+    fifo_push(2);
     run(app);
-    printf("Day 9 part 2: %"PRId64"\n", fifopop());  // right answer = 77944
+    printf("Day 9 part 2: %"PRId64"\n", fifo_pop());  // right answer = 77944
 
     clean_all();
     return 0;
